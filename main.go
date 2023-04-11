@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path"
 	"sync"
+
+	ffmpeg "github.com/u2takey/ffmpeg-go"
 )
 
 
@@ -60,9 +62,6 @@ func (L *List) Display() {
 	fmt.Println()
 }
 
-
-
-
 func looper(list []string) (string ,error)  {
     var e error
     for idx, cmd := range list {
@@ -90,19 +89,10 @@ func remBg(cmd string) error {
     return nil;
 }
 
-
-func checkFFMPEG(){
-    err := exec.Command("ffmpeg", "--version").Run()
-    if err != err {
-        log.Fatal("install ffmpeg")
-    }
-
-}
-
 func (list *List) Aggrator(path string) {
     dirs, err := os.ReadDir(path);
     if err != nil {
-        panic(err);
+        log.Fatalf("couldn't read dir %v", err);
     }
     chunk := 20
     var total int
@@ -146,25 +136,29 @@ func (list *List) mainExecutor(filepath, resultPath string){
 func main() {
     cmd, err := looper(list);
     if err != nil {
-        panic(err)
+        log.Fatalf("looper error %v", err);
+
     }
     err = remBg(cmd);
     if err != nil {
-        panic(err);
+        log.Fatalf("couldn't install rembg %v" ,err);
     }
-    checkFFMPEG()
     filePath := path.Join(os.TempDir(), "test");
     resultPath := path.Join(os.TempDir(), "result");
     os.Mkdir(filePath,0777)
     os.Mkdir(resultPath, 0777);
 
-    elems := []string{"ffmpeg", "-i", "test.mp4", filePath + "/%04d.png"}
+    elems := []string{"ffmpeg", "-i", "test/test.mp4", filePath + "/%04d.png"}
     err = commandRunner(elems...);
     if err != nil {
-        panic(err);
+        log.Fatalf("couldn't run the command %v", err);
     }
 
     list := NewList();
     list.Aggrator(filePath);
     list.mainExecutor(filePath, resultPath);
+    err = ffmpeg.Input(fmt.Sprintf("%s/%s", resultPath, "%04d.png"), ffmpeg.KwArgs{"r": "60"}).Output("./test/output.mp4", ffmpeg.KwArgs{"vcodec": "libx264", "crf": 15, "pix_fmt": "yuv420p"}).OverWriteOutput().ErrorToStdOut().Run()
+    if err != nil {
+        log.Fatalf("couldn't ffmpeg build cmd %v" ,err);
+    }
 }
