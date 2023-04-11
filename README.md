@@ -1,6 +1,6 @@
 # framegoos
 
-Display images and gifs in your terminal emulator.
+Remove any background from your videos in your terminal
 
 <p align="center">
     <img src="https://github.com/bozkayasalihx/framegoos/demo.gif">
