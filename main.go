@@ -158,7 +158,7 @@ func main() {
     os.Mkdir(filePath,0777)
     os.Mkdir(resultPath, 0777);
 
-    elems := []string{"ffmpeg", "-i", "test.mp4", filePath + "/%04d.png"}
+    elems := []string{"ffmpeg", "-i", "test/test.mp4", filePath + "/%04d.png"}
     err = commandRunner(elems...);
     if err != nil {
         panic(err);
