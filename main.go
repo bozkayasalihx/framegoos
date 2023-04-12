@@ -7,54 +7,54 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"sync"
 	// ffmpeg "github.com/u2takey/ffmpeg-go"
 )
 
 var (
 	list = []string{"pip", "pip3"}
+    limit = 20
 )
 
 type Node struct {
-	prev *Node
-	next *Node
-	key  []fs.DirEntry
+	Prev *Node
+	Next *Node
+	Values []fs.DirEntry
 }
 
 type List struct {
-	head *Node
-	tail *Node
+	Head *Node
+	Tail *Node
 }
 
 func NewList() *List {
 	return &List{
-		head: &Node{},
-		tail: &Node{},
+		Head: &Node{},
+		Tail: &Node{},
 	}
 }
 
-func (L *List) Insert(key []fs.DirEntry) {
+func (L *List) Insert(vals []fs.DirEntry) {
 	list := &Node{
-		next: L.head,
-		key:  key,
+		Next: L.Head,
+		Values:  vals,
 	}
-	if L.head != nil {
-		L.head.prev = list
+	if L.Head != nil {
+		L.Head.Prev= list
 	}
-	L.head = list
+	L.Head = list
 
-	l := L.head
-	for l.next != nil {
-		l = l.next
+	l := L.Head
+	for l.Next != nil {
+		l = l.Next
 	}
-	L.tail = l
+	L.Tail= l
 }
 
 func (L *List) Display() {
-	list := L.head
+	list := L.Head
 	for list != nil {
-		fmt.Printf("%+v\n", &list.key)
-		list = list.next
+		fmt.Printf("%+v\n", &list.Values)
+		list = list.Next
 	}
 	fmt.Println()
 }
@@ -71,9 +71,8 @@ func looper(list []string) (string, error) {
 	return "", e
 }
 
-func commandRunner(wg *sync.WaitGroup, cmds ...string) {
-	exec.Command(cmds[0], cmds[1:]...).Run()
-	defer wg.Done()
+func commandRunner(cmds ...string) ([]byte, error) {
+	return exec.Command(cmds[0], cmds[1:]...).Output()
 }
 
 func remBg(cmd string) error {
@@ -81,7 +80,6 @@ func remBg(cmd string) error {
 	if err != nil {
 		return fmt.Errorf("couldn't install rembg -> %v", err)
 	}
-
 	return nil
 }
 
@@ -90,26 +88,18 @@ func (list *List) Aggrator(path string) {
 	if err != nil {
 		log.Fatalf("couldn't read dir %v", err)
 	}
-	chunk := 20
-	var total int
+	chunk := limit
+    a, b := 0, 0; 
+    length := len(dirs);
 
-	for {
-		list.Insert(dirs[total : total+chunk])
-		total += chunk
-		if total >= len(dirs) {
-			break
-		}
+	for a < length {
+        b = a + chunk; 
+        if b > length {
+            b = length;
+        }
+		list.Insert(dirs[a:b])
+        a = b;
 	}
-}
-
-func mainExecutor(node *Node, wg *sync.WaitGroup, ch chan<- struct{}, inputPath, outputPath string) {
-	for _, curDir := range node.key {
-		in := path.Join(inputPath, curDir.Name())
-		out := path.Join(outputPath, curDir.Name())
-		cmd := []string{"rembg", "i", in, out}
-		go commandRunner(wg, cmd...)
-	}
-	ch <- struct{}{}
 }
 
 func main() {
@@ -122,33 +112,39 @@ func main() {
 	if err != nil {
 		log.Fatalf("couldn't install rembg %v", err)
 	}
-	filePath := path.Join(os.TempDir(), "test")
-	resultPath := path.Join(os.TempDir(), "result")
-	os.Mkdir(filePath, 0777)
-	os.Mkdir(resultPath, 0777)
+	inputPath := path.Join(os.TempDir(), "test")
+	outputPath := path.Join(os.TempDir(), "result")
+	os.Mkdir(inputPath, 0777)
+	os.Mkdir(outputPath, 0777)
 
-	notCh := make(chan struct{})
-
-	var wg = sync.WaitGroup{}
-
-	elems := []string{"ffmpeg", "-i", "test/test.mp4", filePath + "/%04d.png"}
-	wg.Add(1)
-	commandRunner(&wg, elems...)
+	elems := []string{"ffmpeg", "-i", "test/test.mp4", inputPath + "/%04d.png"}
+	commandRunner(elems...)
 	list := NewList()
-	list.Aggrator(filePath)
-	for list != nil {
-		head := list.head
-		wg.Add(len(head.key))
-		go mainExecutor(head, &wg, notCh, filePath, resultPath)
-        for {
-            select {
-            case <-notCh: 
-                head = head.next;
-            }
+	list.Aggrator(inputPath)
+
+    c := make(chan int)
+    var total int
+    var behind int
+    
+    for list != nil {
+        head := list.Head 
+        total += len(head.Values);
+        for _, curDir := range head.Values {
+            go func( ){
+                _, e := exec.Command("rembg", "i", inputPath + "/" +  curDir.Name(), outputPath + "/" + curDir.Name()).Output()
+                if e != nil {
+                    panic(err);
+                }
+                c <- 1
+            }()
         }
-	}
-	wg.Wait()
-	fmt.Println("all done")
+        fmt.Println("processsing...") 
+        behind += <-c;
+        if behind == total {
+            head = head.Next; 
+        }
+    }
+
 
 	// err = ffmpeg.Input(fmt.Sprintf("%s/%s", resultPath, "%04d.png"), ffmpeg.KwArgs{"r": "60"}).Output("./test/output.mp4", ffmpeg.KwArgs{"vcodec": "libx264", "crf": 15, "pix_fmt": "yuv420p"}).OverWriteOutput().ErrorToStdOut().Run()
 	// if err != nil {
