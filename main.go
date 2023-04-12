@@ -8,13 +8,11 @@ import (
 	"os/exec"
 	"path"
 	"sync"
-
-	ffmpeg "github.com/u2takey/ffmpeg-go"
+	// ffmpeg "github.com/u2takey/ffmpeg-go"
 )
 
-
 var (
-    list = []string{"pip","pip3"}
+	list = []string{"pip", "pip3"}
 )
 
 type Node struct {
@@ -28,12 +26,11 @@ type List struct {
 	tail *Node
 }
 
-
 func NewList() *List {
-    return &List{
-        head: &Node{},
-        tail: &Node{},
-    }
+	return &List{
+		head: &Node{},
+		tail: &Node{},
+	}
 }
 
 func (L *List) Insert(key []fs.DirEntry) {
@@ -62,103 +59,99 @@ func (L *List) Display() {
 	fmt.Println()
 }
 
-func looper(list []string) (string ,error)  {
-    var e error
-    for idx, cmd := range list {
-        err := exec.Command(cmd).Run()
-        e = err 
-        if err == nil {
-            return list[idx], e
-        }
-    } 
-    return "", e;
+func looper(list []string) (string, error) {
+	var e error
+	for idx, cmd := range list {
+		err := exec.Command(cmd).Run()
+		e = err
+		if err == nil {
+			return list[idx], e
+		}
+	}
+	return "", e
 }
 
-
-func commandRunner(cmds ...string) error {
-    err := exec.Command(cmds[0], cmds[1:]...).Run()
-    return err;
+func commandRunner(wg *sync.WaitGroup, cmds ...string) {
+	exec.Command(cmds[0], cmds[1:]...).Run()
+	defer wg.Done()
 }
 
 func remBg(cmd string) error {
-    err := exec.Command(cmd, "install", "rembg").Run()
-    if err != nil {
-        return fmt.Errorf("couldn't install rembg -> %v" ,err);
-    }
+	err := exec.Command(cmd, "install", "rembg").Run()
+	if err != nil {
+		return fmt.Errorf("couldn't install rembg -> %v", err)
+	}
 
-    return nil;
+	return nil
 }
 
 func (list *List) Aggrator(path string) {
-    dirs, err := os.ReadDir(path);
-    if err != nil {
-        log.Fatalf("couldn't read dir %v", err);
-    }
-    chunk := 20
-    var total int
+	dirs, err := os.ReadDir(path)
+	if err != nil {
+		log.Fatalf("couldn't read dir %v", err)
+	}
+	chunk := 20
+	var total int
 
-    for {
-        list.Insert(dirs[total:total+chunk])
-        total += chunk;        
-        if total >= len(dirs) {
-            break
-        }
-    }
+	for {
+		list.Insert(dirs[total : total+chunk])
+		total += chunk
+		if total >= len(dirs) {
+			break
+		}
+	}
 }
 
-
-func (list *List) mainExecutor(filepath, resultPath string){
-    l := list.head
-    wg := sync.WaitGroup{}
-    for l != nil {
-        wg.Add(len(l.key))
-        for _, dir := range l.key {
-            go func() {
-                defer wg.Done()
-                input := fmt.Sprintf("%s/%s", filepath, dir.Name()) 
-                output := fmt.Sprintf("%s/%s",resultPath,dir.Name())
-                cmd := []string{"rembg", "i", input, output};
-                err := commandRunner(cmd...)
-                if err != nil {
-                    fmt.Printf("got an error %v", err);
-                }
-            }()
-        }
-        fmt.Println("done..")
-        wg.Wait()
-        l = l.next
-    }
-
-    fmt.Println("done");
+func mainExecutor(node *Node, wg *sync.WaitGroup, ch chan<- struct{}, inputPath, outputPath string) {
+	for _, curDir := range node.key {
+		in := path.Join(inputPath, curDir.Name())
+		out := path.Join(outputPath, curDir.Name())
+		cmd := []string{"rembg", "i", in, out}
+		go commandRunner(wg, cmd...)
+	}
+	ch <- struct{}{}
 }
-
 
 func main() {
-    cmd, err := looper(list);
-    if err != nil {
-        log.Fatalf("looper error %v", err);
+	cmd, err := looper(list)
+	if err != nil {
+		log.Fatalf("looper error %v", err)
 
-    }
-    err = remBg(cmd);
-    if err != nil {
-        log.Fatalf("couldn't install rembg %v" ,err);
-    }
-    filePath := path.Join(os.TempDir(), "test");
-    resultPath := path.Join(os.TempDir(), "result");
-    os.Mkdir(filePath,0777)
-    os.Mkdir(resultPath, 0777);
+	}
+	err = remBg(cmd)
+	if err != nil {
+		log.Fatalf("couldn't install rembg %v", err)
+	}
+	filePath := path.Join(os.TempDir(), "test")
+	resultPath := path.Join(os.TempDir(), "result")
+	os.Mkdir(filePath, 0777)
+	os.Mkdir(resultPath, 0777)
 
-    elems := []string{"ffmpeg", "-i", "test/test.mp4", filePath + "/%04d.png"}
-    err = commandRunner(elems...);
-    if err != nil {
-        log.Fatalf("couldn't run the command %v", err);
-    }
+	notCh := make(chan struct{})
 
-    list := NewList();
-    list.Aggrator(filePath);
-    list.mainExecutor(filePath, resultPath);
-    err = ffmpeg.Input(fmt.Sprintf("%s/%s", resultPath, "%04d.png"), ffmpeg.KwArgs{"r": "60"}).Output("./test/output.mp4", ffmpeg.KwArgs{"vcodec": "libx264", "crf": 15, "pix_fmt": "yuv420p"}).OverWriteOutput().ErrorToStdOut().Run()
-    if err != nil {
-        log.Fatalf("couldn't ffmpeg build cmd %v" ,err);
-    }
+	var wg = sync.WaitGroup{}
+
+	elems := []string{"ffmpeg", "-i", "test/test.mp4", filePath + "/%04d.png"}
+	wg.Add(1)
+	commandRunner(&wg, elems...)
+	list := NewList()
+	list.Aggrator(filePath)
+	for list != nil {
+		head := list.head
+		wg.Add(len(head.key))
+		go mainExecutor(head, &wg, notCh, filePath, resultPath)
+        for {
+            select {
+            case <-notCh: 
+                head = head.next;
+            }
+        }
+	}
+	wg.Wait()
+	fmt.Println("all done")
+
+	// err = ffmpeg.Input(fmt.Sprintf("%s/%s", resultPath, "%04d.png"), ffmpeg.KwArgs{"r": "60"}).Output("./test/output.mp4", ffmpeg.KwArgs{"vcodec": "libx264", "crf": 15, "pix_fmt": "yuv420p"}).OverWriteOutput().ErrorToStdOut().Run()
+	// if err != nil {
+	//     log.Fatalf("couldn't ffmpeg build cmd %v" ,err);
+	// }
 }

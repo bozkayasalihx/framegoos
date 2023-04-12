@@ -1,2 +1,4 @@
 .DS_Store
 bin
+test/background.mp4
+test/output.mp4
