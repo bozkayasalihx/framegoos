@@ -19,8 +19,8 @@ var (
 	outdir        = "./test/output.mp4"
 	backgroundDir = "./test/background.mp4"
 	latestDir     = "./test/latest.mp4"
-	inputDir      = "./test/green.mp4"
-	FPS           = 30
+	inputDir      = "./test/test.mp4"
+	FPS           = "30"
 )
 
 type Node struct {
@@ -146,10 +146,11 @@ func main() {
 	os.Mkdir(inputPath, 0777)
 	os.Mkdir(outputPath, 0777)
 
-	elems := []string{"ffmpeg", "-i", inputDir, "-vf", fmt.Sprintf("fps=%d", FPS), inputPath + "/%04d.png"}
-	_, e := commandRunner(elems...)
+	elems := []string{"ffmpeg", "-i", inputDir, "-vf", fmt.Sprintf("fps=%s", FPS), inputPath + "/%04d.png"}
+	out, e := commandRunner(elems...)
+	util.Processor(out)
 	if e != nil {
-		panic(e)
+		log.Fatalf("coudn't find the %s \n", inputPath)
 	}
 
 	list := NewList()
