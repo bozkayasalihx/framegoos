@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path"
 	"sync"
+
 )
 
 var (
@@ -18,6 +19,9 @@ var (
 	outdir        = "./test/output.mp4"
 	backgroundDir = "./test/background.mp4"
 	latestDir     = "./test/latest.mp4"
+	inputDir      = "./test/test.mp4"
+	FPS           = "30"
+
 )
 
 type Node struct {
@@ -102,10 +106,27 @@ func (list *List) Aggrator(path string) {
 		if b > length {
 			b = length
 		}
-		fmt.Println(a)
-		fmt.Println(b)
 		list.Insert(dirs[a:b])
 		a = b
+	}
+}
+
+func (ll *List) Execute(wg *sync.WaitGroup, inputPath, outputPath string) {
+	head := ll.Head
+	for head != nil {
+		for _, curDir := range head.Values {
+			wg.Add(1)
+			go func(c fs.DirEntry) {
+				_, e := exec.Command("rembg", "i", "-om", inputPath+"/"+c.Name(), outputPath+"/"+c.Name()).Output()
+				if e != nil {
+					panic(e)
+				}
+				defer wg.Done()
+			}(curDir)
+		}
+		fmt.Println("processing...")
+		wg.Wait()
+		head = head.Next
 	}
 }
 
@@ -119,42 +140,27 @@ func main() {
 	if err != nil {
 		log.Fatalf("couldn't install rembg %v", err)
 	}
+
 	inputPath := path.Join(os.TempDir(), "test")
 	outputPath := path.Join(os.TempDir(), "result")
+
 	os.Mkdir(inputPath, 0777)
 	os.Mkdir(outputPath, 0777)
 
-	elems := []string{"ffmpeg", "-i", "test/test.mp4", "-vf", "fps=30", inputPath + "/%04d.png"}
+
+	elems := []string{"ffmpeg", "-i", inputDir, "-vf", fmt.Sprintf("fps=%s", FPS), inputPath + "/%04d.png"}
 	out, e := commandRunner(elems...)
+	util.Processor(out)
 	if e != nil {
-		panic(e)
+		log.Fatalf("coudn't find the %s \n", inputPath)
 	}
-	fmt.Println(string(out))
+
+
 	list := NewList()
 	list.Aggrator(inputPath)
 
 	wg := sync.WaitGroup{}
-
-	fmt.Println(inputPath)
-
-	for list != nil {
-		head := list.Head
-		for _, curDir := range head.Values {
-			wg.Add(1)
-			go func(c fs.DirEntry) {
-				fmt.Println("command running")
-				_, e := exec.Command("rembg", "i", inputPath+"/"+c.Name(), outputPath+"/"+c.Name()).Output()
-				if e != nil {
-					panic(err)
-				}
-				fmt.Println("command done...")
-				defer wg.Done()
-			}(curDir)
-		}
-		head = head.Next
-		// break
-	}
-	wg.Wait()
+	list.Execute(&wg, inputPath, outputPath)
 	fmt.Println("all done")
 
 	err = ffmpeg.Input(fmt.Sprintf("%s/%s", outputPath, "%04d.png"), ffmpeg.KwArgs{"r": "30"}).
@@ -164,7 +170,8 @@ func main() {
 		log.Fatalf("couldn't ffmpeg build cmd %v", err)
 	}
 
-	overlay := ffmpeg.Input(outdir).Filter("scale", ffmpeg.Args{"64:-1"})
+	overlay := ffmpeg.Input(outdir).Filter("scale", ffmpeg.Args{"300:-1"})
+  
 	err = ffmpeg.Filter(
 		[]*ffmpeg.Stream{
 			ffmpeg.Input(backgroundDir),
@@ -173,5 +180,12 @@ func main() {
 		Output(latestDir).OverWriteOutput().ErrorToStdOut().Run()
 
 	err = util.Cleanup(inputPath)
+	if err != nil {
+		fmt.Printf("couldn't delete  %s -> %v", inputPath, err)
+	}
+
 	err = util.Cleanup(outputPath)
+	if err != nil {
+		fmt.Printf("couldn't delete  %s -> %v", outputPath, err)
+	}
 }

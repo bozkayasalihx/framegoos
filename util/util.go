@@ -1,10 +1,14 @@
 package util
 
 import (
-	"io/fs"
+	"fmt"
 	"os"
 )
 
-func Cleanup(path string) *os.PathError {
-	return os.Remove(path).(*fs.PathError)
+func Cleanup(path string) error {
+	return os.RemoveAll(path)
+}
+
+func Processor(data []byte) {
+	fmt.Printf("output -> \n %s", string(data))
 }
