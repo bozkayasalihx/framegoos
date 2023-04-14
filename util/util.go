@@ -6,7 +6,7 @@ import (
 )
 
 func Cleanup(path string) error {
-	return os.Remove(path)
+	return os.RemoveAll(path)
 }
 
 func Processor(data []byte) {
