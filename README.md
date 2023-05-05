@@ -12,9 +12,7 @@ Remove any background from your videos in your terminal
 
 ### Installation
 
-#### Download binaries
-
-Alternatively, you can download a pre-built binary [here](https://github.com/danielgatis/imgcat/releases).
+<!-- #### Download binaries -->
 
 ### Build from source
 
